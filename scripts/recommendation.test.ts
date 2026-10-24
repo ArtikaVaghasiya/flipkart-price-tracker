@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { buildRecommendation } from '@/lib/recommendation';
+import { recommendationCsvStream } from '@/lib/services/exportService';
 import { computeSettlement } from '@/lib/settlement';
 import type { JobRow } from '@/types/dashboard';
 
@@ -160,6 +161,37 @@ function priced(ourPrice: number, winnerPrice: number, overrides: Partial<JobRow
   assert.equal(input.currentBankSettlement, 90, 'buildRecommendation does not mutate its input');
 }
 
+/* ------------------------------------------------------- excluded sellers */
+{
+  const input = priced(150, 130, {
+    currentBankSettlement: 90,
+    bankSettlementThreshold: 100,
+    result: {
+      ...row({}).result!,
+      mainPrice: 130,
+      sellerPrice: 150,
+      buyboxSellerName: ' Seller-One ',
+    },
+  });
+  const excluded = ['seller one'];
+
+  const recommendation = buildRecommendation(input, excluded);
+  assert.equal(recommendation.status, 'Need Review');
+  assert.equal(recommendation.finalBankSettlement, 90, 'excluded seller keeps the exact current settlement');
+  assert.match(recommendation.reason ?? '', /excluded/);
+
+  const settlement = computeSettlement(input, excluded);
+  assert.equal(settlement.finalBankSettlement, 90, 'settlement view does not propose a price change');
+  assert.equal(settlement.category, 'review');
+  assert.match(settlement.reason ?? '', /excluded/);
+
+  assert.equal(
+    buildRecommendation(input, ['Different Seller']).finalBankSettlement,
+    100,
+    'a non-matching seller retains the existing minimum-floor behavior',
+  );
+}
+
 /* ------------------------------------------------- preserved existing coverage */
 // We are ₹6 cheaper than the buy box, so the settlement rises: 119 + 6 = 125 > 115.
 assert.deepEqual(buildRecommendation(row({})), { key: 'x', index: 0, sku: 'x', fsn: 'FSN', diffAmount: 6, status: 'Safe', finalBankSettlement: 125, reason: null });
@@ -199,7 +231,7 @@ assert.equal(buildRecommendation(priced(100, 70, { currentBankSettlement: 119, b
     row({ index: 2, key: 'c', sku: 'SKU-C', fsn: 'FSN-C' }),
   ];
 
-  const built = rows.map(buildRecommendation);
+  const built = rows.map((item) => buildRecommendation(item));
   assert.deepEqual(built.map((item) => item.index), [0, 1, 2]);
   assert.deepEqual(built.map((item) => item.sku), ['SKU-A', 'SKU-B', 'SKU-C']);
   assert.deepEqual(built.map((item) => item.fsn), ['FSN-A', 'FSN-B', 'FSN-C']);
@@ -208,4 +240,37 @@ assert.equal(buildRecommendation(priced(100, 70, { currentBankSettlement: 119, b
   assert.equal(built[1].status, 'Need Review');
 }
 
-console.log('Recommendation tests passed.');
+async function verifySellerNamesExport(): Promise<void> {
+  const reader = recommendationCsvStream([
+    {
+      key: 'seller-export',
+      index: 0,
+      sku: 'SKU',
+      fsn: 'FSN',
+      diffAmount: 0,
+      status: 'Safe',
+      finalBankSettlement: 100,
+      reason: null,
+      sellerNames: 'Seller One, Seller Two',
+    },
+  ]).getReader();
+  const decoder = new TextDecoder();
+  let csv = '';
+
+  for (;;) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    csv += decoder.decode(value);
+  }
+
+  assert.match(csv, /Current Sellers/);
+  assert.match(csv, /"Seller One, Seller Two"/);
+}
+
+void verifySellerNamesExport().then(
+  () => console.log('Recommendation tests passed.'),
+  (error: unknown) => {
+    console.error(error);
+    process.exitCode = 1;
+  },
+);

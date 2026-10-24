@@ -35,7 +35,7 @@ export async function generateRecommendations(jobId: string): Promise<Recommenda
   if (!manifest) return null;
 
   const rows = await getAllRows(jobId);
-  const recommendations = rows.map(buildRecommendation);
+  const recommendations = rows.map((row) => buildRecommendation(row, manifest.options.excludedSellerNames));
   const generatedAt = new Date().toISOString();
   const summary = `${recommendations.length} FSNs`;
 

@@ -23,6 +23,7 @@ import { computeSettlement } from '@/lib/settlement';
 import { getAllRows, listJobs, sameAccount } from '@/lib/store/jobStore';
 import { supabaseAdmin } from '@/lib/supabase/admin';
 import type { FsnIntelligenceDb } from '@/lib/supabase/types';
+import { sellerNamesMatch } from '@/scraper/parser';
 import { processObservation, type UploadDecision } from './engine';
 import {
   DEFAULT_INTELLIGENCE_CONFIG,
@@ -198,7 +199,15 @@ export async function syncAccount(
     // one wins so a single upload contributes a single observation.
     const observations = new Map<string, Observation>();
     for (const row of rows) {
-      if (!row.result || row.result.status !== 'OK' || observations.has(row.fsn)) continue;
+      const result = row.result;
+      if (!result || result.status !== 'OK' || observations.has(row.fsn)) continue;
+      if (
+        manifest.options.excludedSellerNames.some((name) =>
+          sellerNamesMatch(name, result.buyboxSellerName),
+        )
+      ) {
+        continue;
+      }
 
       const settlement = computeSettlement(row);
       if (settlement.sellerPrice === null || settlement.currentPrice === null) continue;

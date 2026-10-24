@@ -68,6 +68,8 @@ export interface ScrapeResult {
   showMoreClicks?: number;
   /** Where the seller list came from. */
   source?: 'network' | 'dom' | 'api';
+  /** Names of all sellers visible in the listing's seller list. */
+  sellerNames?: string[];
   durationMs?: number;
   /** How many times this product was attempted, including back-off retries. 1 when it worked first go. */
   attempts?: number;

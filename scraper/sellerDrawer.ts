@@ -21,7 +21,7 @@ import {
 } from './selectors';
 import { extractSellersFromJson, findSeller, parsePrice, sellerNamesMatch } from './parser';
 import type { ResolvedOptions, SellerCard } from './types';
-import { ScrapeError, delay, dismissOverlays, log, waitFor, waitForPageSettled, withRetry } from './utils';
+import { ScrapeError, delay, dismissOverlays, errorMessage, log, waitFor, waitForPageSettled, withRetry } from './utils';
 import { assertNotBlocked, type SellerListEntry } from './productPage';
 
 /* ----------------------------------------------------------- network capture */
@@ -463,10 +463,12 @@ export async function clickShowMoreUntilSellerFound(
   page: Page,
   targetSeller: string,
   options: ResolvedOptions,
+  collectAll = false,
 ): Promise<SellerSearchResult> {
   let showMoreClicks = 0;
   let sellers = await extractSellers(page);
   let lastCount = sellers.length;
+  let matchedSeller: SellerCard | null = null;
 
   /**
    * Text-anchored lookup, for when the card classes have rotated and structured
@@ -490,13 +492,18 @@ export async function clickShowMoreUntilSellerFound(
   for (;;) {
     const structuralMatch = findSeller(sellers, targetSeller);
     if (structuralMatch) {
-      log.step('Seller found...');
-      return { seller: structuralMatch, sellers, sellersScanned: sellers.length, showMoreClicks };
+      matchedSeller ??= structuralMatch;
+      if (!collectAll) {
+        log.step('Seller found...');
+        return { seller: structuralMatch, sellers, sellersScanned: sellers.length, showMoreClicks };
+      }
     }
 
     if (sellers.length === 0) {
       const anchored = await anchoredMatch();
-      if (anchored) return { seller: anchored, sellers, sellersScanned: 1, showMoreClicks };
+      if (anchored) {
+        return { seller: anchored, sellers: [anchored], sellersScanned: 1, showMoreClicks };
+      }
     }
 
     log.step(`Seller not found... (${sellers.length} sellers scanned)`);
@@ -513,10 +520,19 @@ export async function clickShowMoreUntilSellerFound(
         continue;
       }
 
+      if (matchedSeller) {
+        return { seller: matchedSeller, sellers, sellersScanned: sellers.length, showMoreClicks };
+      }
+
       // The last word before a "not found" is written down.
       const anchored = await anchoredMatch();
       if (anchored) {
-        return { seller: anchored, sellers, sellersScanned: Math.max(sellers.length, 1), showMoreClicks };
+        return {
+          seller: anchored,
+          sellers: sellers.length > 0 ? sellers : [anchored],
+          sellersScanned: Math.max(sellers.length, 1),
+          showMoreClicks,
+        };
       }
 
       log.info('no "Show More" control remains — seller list is exhausted');
@@ -525,7 +541,7 @@ export async function clickShowMoreUntilSellerFound(
 
     if (showMoreClicks >= options.maxShowMoreClicks) {
       log.warn(`stopping at the ${options.maxShowMoreClicks}-click safety cap with "Show More" still present`);
-      return { seller: null, sellers, sellersScanned: sellers.length, showMoreClicks };
+      return { seller: matchedSeller, sellers, sellersScanned: sellers.length, showMoreClicks };
     }
 
     log.step('Clicking Show More...');
@@ -554,7 +570,7 @@ export async function clickShowMoreUntilSellerFound(
     if (!grown) {
       log.info('no new sellers rendered after "Show More" — treating the list as complete');
       const finalSellers = await extractSellers(page);
-      const lateMatch = findSeller(finalSellers, targetSeller);
+      const lateMatch = matchedSeller ?? findSeller(finalSellers, targetSeller);
       return { seller: lateMatch, sellers: finalSellers, sellersScanned: finalSellers.length, showMoreClicks };
     }
 
@@ -574,6 +590,7 @@ export async function getSellerPrice(
   targetSeller: string,
   capture: NetworkCapture | null,
   options: ResolvedOptions,
+  collectAll = false,
 ): Promise<{
   seller: SellerCard | null;
   /** Every card the winning path saw. Page-ordered for `dom`, arbitrary for `network`. */
@@ -587,6 +604,26 @@ export async function getSellerPrice(
     const match = findSeller(networkSellers, targetSeller);
     if (match && match.price !== null) {
       log.info(`seller resolved from a captured network payload (${networkSellers.length} sellers)`);
+      if (collectAll) {
+        try {
+          const domResult = await clickShowMoreUntilSellerFound(page, targetSeller, options, true);
+          const mergedSellers = [...domResult.sellers];
+          for (const networkSeller of networkSellers) {
+            if (!mergedSellers.some((seller) => sellerNamesMatch(seller.name, networkSeller.name))) {
+              mergedSellers.push(networkSeller);
+            }
+          }
+          return {
+            seller: match,
+            sellers: mergedSellers,
+            source: 'network',
+            sellersScanned: mergedSellers.length,
+            showMoreClicks: domResult.showMoreClicks,
+          };
+        } catch (error) {
+          log.warn(`Could not exhaust the seller list after a network match: ${errorMessage(error)}`);
+        }
+      }
       return {
         seller: match,
         sellers: networkSellers,
@@ -600,7 +637,7 @@ export async function getSellerPrice(
     }
   }
 
-  const result = await clickShowMoreUntilSellerFound(page, targetSeller, options);
+  const result = await clickShowMoreUntilSellerFound(page, targetSeller, options, true);
   return {
     seller: result.seller,
     sellers: result.sellers,

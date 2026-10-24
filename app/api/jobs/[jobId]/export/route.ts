@@ -33,7 +33,7 @@ export async function GET(request: Request, { params }: Context) {
   const rows = await getAllRows(jobId, parseRowFilters(url.searchParams));
 
   if (format === 'csv') {
-    return new Response(csvStream(rows), {
+    return new Response(csvStream(rows, manifest.options.excludedSellerNames), {
       headers: {
         'Content-Type': 'text/csv; charset=utf-8',
         'Content-Disposition': `attachment; filename="${exportFilename(manifest, 'csv')}"`,

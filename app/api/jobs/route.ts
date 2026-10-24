@@ -41,6 +41,18 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Request body must be JSON.' }, { status: 400 });
   }
 
+  const excludedSellerNames: unknown = body.options?.excludedSellerNames;
+  if (
+    excludedSellerNames !== undefined &&
+    (!Array.isArray(excludedSellerNames) ||
+      excludedSellerNames.some((name) => typeof name !== 'string' || name.trim().length > 200))
+  ) {
+    return NextResponse.json(
+      { error: 'Except sellers must be an array of names, each no longer than 200 characters.' },
+      { status: 400 },
+    );
+  }
+
   // Re-validate server-side. The client already did, but the client is not the
   // authority on what lands in the database.
   const report = validateUpload(JSON.stringify(body.rows ?? []));
@@ -97,6 +109,9 @@ function sanitizeOptions(posted: Partial<JobOptions> | undefined): JobOptions {
     timeout: clamp(merged.timeout, 1_000, 600_000, DEFAULT_JOB_OPTIONS.timeout),
     blockBackoffMs: clamp(merged.blockBackoffMs, 0, 3_600_000, DEFAULT_JOB_OPTIONS.blockBackoffMs),
     blockRetries: clamp(merged.blockRetries, 0, 20, DEFAULT_JOB_OPTIONS.blockRetries),
+    excludedSellerNames: Array.isArray(merged.excludedSellerNames)
+      ? merged.excludedSellerNames.map((name) => name.trim()).filter(Boolean)
+      : [],
   };
 }
 

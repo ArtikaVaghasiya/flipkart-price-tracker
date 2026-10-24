@@ -34,7 +34,10 @@ function round2(value: number | null): number | null {
   return value === null ? null : Math.round(value * 100) / 100;
 }
 
-const COLUMNS: Column[] = [
+function columnsFor(excludedSellerNames: string[] = []): Column[] {
+  const settlement = (row: JobRow) => computeSettlement(row, excludedSellerNames);
+
+  return [
   { header: 'Index', width: 8, value: (row) => row.index + 1 },
   { header: 'SKU', width: 18, value: (row) => row.sku },
   { header: 'FSN', width: 20, value: (row) => row.fsn },
@@ -51,20 +54,20 @@ const COLUMNS: Column[] = [
     header: 'Buybox',
     width: 10,
     value: (row) => {
-      const hasBuybox = computeSettlement(row).hasBuybox;
+      const hasBuybox = settlement(row).hasBuybox;
       return hasBuybox === null ? null : hasBuybox ? 'YES' : 'NO';
     },
   },
   // Difference here is the dashboard's direction (current − seller), matching the
   // settlement view and the queue's Diff column, not the journal's stored sign.
-  { header: 'Difference', width: 12, value: (row) => computeSettlement(row).difference },
-  { header: 'Difference %', width: 12, value: (row) => round2(computeSettlement(row).differencePct) },
+  { header: 'Difference', width: 12, value: (row) => settlement(row).difference },
+  { header: 'Difference %', width: 12, value: (row) => round2(settlement(row).differencePct) },
   { header: 'Current Bank Settlement', width: 20, value: (row) => row.currentBankSettlement ?? null },
   { header: 'Minimum Bank Settlement', width: 22, value: (row) => row.bankSettlementThreshold ?? null },
-  { header: 'Final Bank Settlement', width: 20, value: (row) => round2(computeSettlement(row).finalBankSettlement) },
-  { header: 'Settlement List', width: 16, value: (row) => SETTLEMENT_CATEGORY_LABEL[computeSettlement(row).category] },
+  { header: 'Final Bank Settlement', width: 20, value: (row) => round2(settlement(row).finalBankSettlement) },
+  { header: 'Settlement List', width: 16, value: (row) => SETTLEMENT_CATEGORY_LABEL[settlement(row).category] },
   // Only the "Needs review" rows carry a reason; everything else exports empty.
-  { header: 'Settlement Reason', width: 24, value: (row) => computeSettlement(row).reason },
+  { header: 'Settlement Reason', width: 24, value: (row) => settlement(row).reason },
   {
     header: 'Price Different',
     width: 14,
@@ -85,7 +88,8 @@ const COLUMNS: Column[] = [
   // The Seller Hub listing deep link a settlement row opens when clicked, so the
   // export lands on the same page the dashboard does. Empty without an FSN.
   { header: 'Seller Link', width: 60, value: (row) => (row.fsn ? sellerListingUrl(row.fsn) : null) },
-];
+  ];
+}
 
 export function exportFilename(manifest: JobManifest, extension: string, suffix?: string): string {
   const safe = manifest.name.replace(/[^A-Za-z0-9_-]+/g, '-').replace(/^-|-$/g, '').slice(0, 60);
@@ -129,8 +133,8 @@ export function* csvLinesFor<T>(rows: T[], columns: Column<T>[]): Generator<stri
   }
 }
 
-export function* csvLines(rows: JobRow[]): Generator<string> {
-  yield* csvLinesFor(rows, COLUMNS);
+export function* csvLines(rows: JobRow[], excludedSellerNames: string[] = []): Generator<string> {
+  yield* csvLinesFor(rows, columnsFor(excludedSellerNames));
 }
 
 function streamFor<T>(rows: T[], columns: Column<T>[]): ReadableStream<Uint8Array> {
@@ -146,8 +150,8 @@ function streamFor<T>(rows: T[], columns: Column<T>[]): ReadableStream<Uint8Arra
   });
 }
 
-export function csvStream(rows: JobRow[]): ReadableStream<Uint8Array> {
-  return streamFor(rows, COLUMNS);
+export function csvStream(rows: JobRow[], excludedSellerNames: string[] = []): ReadableStream<Uint8Array> {
+  return streamFor(rows, columnsFor(excludedSellerNames));
 }
 
 /* -------------------------------------------------------------------- XLSX */
@@ -191,7 +195,7 @@ export async function xlsxBuffer(manifest: JobManifest, rows: JobRow[]): Promise
   workbook.creator = 'Flipkart Scraper Dashboard';
   workbook.created = new Date(manifest.createdAt);
 
-  addSheet(workbook, 'Results', COLUMNS, rows);
+  addSheet(workbook, 'Results', columnsFor(manifest.options.excludedSellerNames), rows);
 
   const summary = workbook.addWorksheet('Summary');
   const succeeded = rows.filter((row) => row.result?.status === 'OK').length;
@@ -238,6 +242,7 @@ const RECOMMENDATION_COLUMNS: Column<Recommendation>[] = [
   { header: 'Diff Amount', width: 16, value: (item) => round2(item.diffAmount) },
   { header: 'Status', width: 28, value: (item) => item.status },
   { header: 'Final Bank Settlement', width: 22, value: (item) => round2(item.finalBankSettlement) },
+  { header: 'Current Sellers', width: 48, value: (item) => item.sellerNames ?? '' },
   // Why a row is Need Review / Threshold Missing. Empty for rows that were scored.
   { header: 'Reason', width: 40, value: (item) => item.reason },
 ];

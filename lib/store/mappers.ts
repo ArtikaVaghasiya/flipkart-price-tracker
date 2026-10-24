@@ -137,6 +137,7 @@ export function resultToColumns(jobId: string, idx: number, result: JournalRow):
     message: result.message ?? null,
     sellers_scanned: result.sellersScanned ?? null,
     show_more_clicks: result.showMoreClicks ?? null,
+    seller_names: result.sellerNames ?? [],
     source: result.source ?? null,
     duration_ms: result.durationMs ?? null,
     attempts: result.attempts ?? null,

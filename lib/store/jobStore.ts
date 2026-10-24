@@ -437,6 +437,31 @@ export async function getAllRows(jobId: string, filters: RowFilters = {}): Promi
   return rows;
 }
 
+/** Seller names recorded for each row; used only by the recommendation export. */
+export async function getSellerNames(jobId: string): Promise<Map<number, string[]>> {
+  if (!isValidId(jobId)) return new Map();
+
+  const db = supabaseAdmin();
+  const namesByIndex = new Map<number, string[]>();
+
+  for (let offset = 0; ; offset += PAGE_SIZE) {
+    const { data, error } = await db
+      .from('job_results')
+      .select('idx,seller_names')
+      .eq('job_id', jobId)
+      .order('idx', { ascending: true })
+      .range(offset, offset + PAGE_SIZE - 1);
+
+    if (error) throw new Error(`Could not read seller names for the export: ${error.message}`);
+
+    const batch = (data ?? []) as { idx: number; seller_names: string[] | null }[];
+    for (const row of batch) namesByIndex.set(row.idx, row.seller_names ?? []);
+    if (batch.length < PAGE_SIZE) break;
+  }
+
+  return namesByIndex;
+}
+
 /**
  * How many products still need scraping.
  *

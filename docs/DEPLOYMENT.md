@@ -31,6 +31,7 @@ time, checking each succeeds before the next:
 | `0005_retention.sql` | The 30-batches-per-account prune. It is the only migration that deletes anything — apply it only once the rest works. |
 | `0006_source_api.sql` | Widens the `job_results.source` check to allow `'api'`. **Apply before running a worker built after the seller-API change**, or every result it produces is rejected by the constraint and lost. |
 | `0007_upload_staging.sql` | Creates the private, temporary Storage bucket used for direct spreadsheet uploads. **Required before deploying the large-upload change.** |
+| `0008_result_seller_names.sql` | Stores all seller names found for each product for the recommendation export. **Apply before running the updated worker.** |
 
 `0005` no longer schedules anything: the nightly pg_cron entry is commented out and the file
 unschedules an existing `prune-jobs` entry if a previous version installed one. Run
@@ -42,7 +43,7 @@ tidy-up, not a correctness rule.
 **Project Settings → API**:
 
 - **Project URL** → `NEXT_PUBLIC_SUPABASE_URL` and `SUPABASE_URL`
-- **anon / public** → `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+- **publishable / anon public** → `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` (legacy projects may use `NEXT_PUBLIC_SUPABASE_ANON_KEY`)
 - **service_role** → `SUPABASE_SERVICE_ROLE_KEY`
 
 The service-role key bypasses RLS entirely. It belongs in exactly two places — Vercel's
@@ -75,7 +76,7 @@ swap `to anon` for `to authenticated` in `0003_rls.sql`.
 | Variable | Value | Exposed to browser? |
 |---|---|---|
 | `NEXT_PUBLIC_SUPABASE_URL` | Supabase Project URL | Yes, by design |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase anon key | Yes, by design |
+| `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` (or legacy `NEXT_PUBLIC_SUPABASE_ANON_KEY`) | Supabase publishable/anon key | Yes, by design |
 | `SUPABASE_SERVICE_ROLE_KEY` | Supabase service_role key | **No** |
 | `GITHUB_DISPATCH_TOKEN` | the PAT from step 3 | **No** |
 | `GITHUB_REPO` | `your-user/flipkart-price-scrapper` | No |
@@ -221,7 +222,7 @@ cp .env.example .env.local          # fill in the Supabase values
 npm run dev                         # http://localhost:3000
 ```
 
-`.env.local` needs the two `NEXT_PUBLIC_*` variables and `SUPABASE_SERVICE_ROLE_KEY`. Do not
+`.env.local` needs `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` (or the legacy anon-key name), and `SUPABASE_SERVICE_ROLE_KEY`. Do not
 put `GITHUB_DISPATCH_TOKEN` in it unless you actually want a local Start button to fire a
 real GitHub Actions run.
 

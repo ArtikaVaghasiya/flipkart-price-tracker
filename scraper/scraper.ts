@@ -570,33 +570,11 @@ async function scrapeInContext(
   // 1. The buy box, off the raw HTML — no page, no renderer.
   //
   // Second in line now: the seller API answers the same question and more. This
-  // still runs for the products it could not read, where it decides how much of
-  // the rest is worth doing. If the account already holds the buy box, its price
-  // IS the page price, the bank settlement does not move, and the seller list
-  // has nothing to add — so that product is finished here too.
+  // still runs for products it could not read, and the seller list is collected
+  // for the recommendation export even when the account holds the buy box.
   const probe = options.buyboxProbe ? await probeBuybox(context, input.productUrl, options) : null;
   if (probe) log.info(`fulfilled by: ${probe.buyboxSeller} (from page HTML)`);
-
-  if (probe && sellerNamesMatch(probe.buyboxSeller, input.targetSeller)) {
-    log.step('Buy box is already ours — no seller comparison needed.');
-    step('done');
-    await handOver();
-    return {
-      fsn: input.fsn,
-      sku: input.sku,
-      sellerName: probe.buyboxSeller,
-      buyboxSellerName: probe.buyboxSeller,
-      mainListingIsAccountSeller: true,
-      mainPrice: probe.mainPrice,
-      sellerPrice: probe.mainPrice,
-      difference: null,
-      isPriceDifferent: false,
-      productUrl: input.productUrl,
-      status: 'OK',
-      durationMs: Date.now() - startedAt,
-      attempts: attempt,
-    };
-  }
+  const probeFoundAccountSeller = Boolean(probe && sellerNamesMatch(probe.buyboxSeller, input.targetSeller));
 
   // The seller list is addressable directly as /sellers?pid=<FSN>, and a probe
   // has already answered everything the PDP would have been rendered for. Both
@@ -608,10 +586,12 @@ async function scrapeInContext(
   const page = await context.newPage();
   let capture: NetworkCapture | null = null;
   if (options.useNetworkCapture) capture = attachNetworkCapture(page);
+  let capturedSellerNames: string[] = [];
 
   try {
     let mainPrice: number;
     let fulfilledBy: string | null;
+    let mainListingIsAccountSeller = probeFoundAccountSeller;
     let entry: SellerListEntry;
 
     if (skipProductPage && probe) {
@@ -652,45 +632,66 @@ async function scrapeInContext(
       // The probe answers this for most products, but a page it could not read
       // reaches here unanswered — and the account holding the buy box still ends
       // the product, whichever read established it.
-      if (sellerNamesMatch(fulfilledBy, input.targetSeller)) {
-        step('done');
-        return {
-          fsn: input.fsn,
-          sku: input.sku,
-          sellerName: fulfilledBy,
-          buyboxSellerName: fulfilledBy,
-          mainListingIsAccountSeller: true,
-          mainPrice,
-          sellerPrice: mainPrice,
-          difference: null,
-          isPriceDifferent: false,
-          productUrl: input.productUrl,
-          status: 'OK',
-          durationMs: Date.now() - startedAt,
-          attempts: attempt,
-        };
-      }
+      mainListingIsAccountSeller = sellerNamesMatch(fulfilledBy, input.targetSeller);
 
       entry = await findSellerListEntry(page, jsonLd, input.productUrl, input.fsn);
     }
 
     // 5. Into the seller list.
-    step('opening-sellers');
-    await openSellerDrawer(page, entry, options);
-
-    // 6. Find the seller, paging as needed.
-    step('finding-seller');
-    const { seller, sellers, source, sellersScanned, showMoreClicks } = await getSellerPrice(
-      page,
-      input.targetSeller,
-      capture,
-      options,
-    );
+    let sellerRead: Awaited<ReturnType<typeof getSellerPrice>>;
+    try {
+      step('opening-sellers');
+      await openSellerDrawer(page, entry, options);
+      step('finding-seller');
+      sellerRead = await getSellerPrice(page, input.targetSeller, capture, options, true);
+    } catch (error) {
+      if (!mainListingIsAccountSeller) throw error;
+      log.warn(`Could not capture the seller list for our buy-box listing: ${errorMessage(error)}`);
+      step('done');
+      return {
+        fsn: input.fsn,
+        sku: input.sku,
+        sellerName: fulfilledBy,
+        buyboxSellerName: fulfilledBy,
+        mainListingIsAccountSeller: true,
+        mainPrice,
+        sellerPrice: mainPrice,
+        difference: null,
+        isPriceDifferent: false,
+        productUrl: input.productUrl,
+        status: 'OK',
+        sellerNames: [],
+        durationMs: Date.now() - startedAt,
+        attempts: attempt,
+      };
+    }
+    const { seller, sellers, source, sellersScanned, showMoreClicks } = sellerRead;
+    capturedSellerNames = sellers.map(({ name }) => name);
 
     // Who holds the buy box. The PDP's "Fulfilled by" line states it outright, so
     // that wins; inferring it from the seller list is only the fallback for pages
     // that carry no such line.
     const buyboxSellerName = fulfilledBy ?? pickBuyboxSeller(sellers, mainPrice, source === 'dom')?.name ?? null;
+
+    if (mainListingIsAccountSeller) {
+      step('done');
+      return {
+        fsn: input.fsn,
+        sku: input.sku,
+        sellerName: fulfilledBy,
+        buyboxSellerName: fulfilledBy,
+        mainListingIsAccountSeller: true,
+        mainPrice,
+        sellerPrice: mainPrice,
+        difference: null,
+        isPriceDifferent: false,
+        productUrl: input.productUrl,
+        status: 'OK',
+        sellerNames: sellers.map(({ name }) => name),
+        durationMs: Date.now() - startedAt,
+        attempts: attempt,
+      };
+    }
 
     if (!seller) {
       throw new ScrapeError(
@@ -720,6 +721,7 @@ async function scrapeInContext(
       isPriceDifferent,
       productUrl: input.productUrl,
       status: 'OK',
+      sellerNames: sellers.map(({ name }) => name),
       sellersScanned,
       showMoreClicks,
       source,
@@ -732,10 +734,10 @@ async function scrapeInContext(
 
     if (error instanceof ScrapeError) {
       log.error(`${error.code}: ${error.message}`);
-      return { ...failure(input, error.code, error.message), ...tail };
+      return { ...failure(input, error.code, error.message), sellerNames: capturedSellerNames, ...tail };
     }
     log.error(errorMessage(error));
-    return { ...failure(input, 'ERROR', errorMessage(error)), ...tail };
+    return { ...failure(input, 'ERROR', errorMessage(error)), sellerNames: capturedSellerNames, ...tail };
   } finally {
     capture?.detach();
 
@@ -795,6 +797,7 @@ function resolveFromApi(
     sellersScanned: api.sellers.length,
     showMoreClicks: 0,
     source: 'api' as const,
+    sellerNames: api.sellers.map(({ name }) => name),
     durationMs: Date.now() - startedAt,
     attempts: attempt,
   };

@@ -129,7 +129,13 @@ const CATEGORY_COLUMN: SettlementColumn = {
 
 const ALL_COLUMNS = [...BASE_COLUMNS, CATEGORY_COLUMN, REASON_COLUMN];
 
-export function SettlementView({ jobId }: { jobId: string }) {
+export function SettlementView({
+  jobId,
+  excludedSellerNames = [],
+}: {
+  jobId: string;
+  excludedSellerNames?: string[];
+}) {
   const rowsQuery = useJobRows(jobId, EMPTY_FILTERS);
   const rows = rowsQuery.data?.rows;
   const [fsnSearch, setFsnSearch] = useState('');
@@ -142,7 +148,7 @@ export function SettlementView({ jobId }: { jobId: string }) {
     const review: SettlementRow[] = [];
 
     for (const row of rows ?? []) {
-      const entry: SettlementRow = { row, settlement: computeSettlement(row) };
+      const entry: SettlementRow = { row, settlement: computeSettlement(row, excludedSellerNames) };
       all.push(entry);
       if (entry.settlement.category === 'main') main.push(entry);
       else if (entry.settlement.category === 'below') below.push(entry);
@@ -151,7 +157,7 @@ export function SettlementView({ jobId }: { jobId: string }) {
     }
 
     return { all, main, below, equal, review };
-  }, [rows]);
+  }, [rows, excludedSellerNames]);
 
   // The All tab's own FSN filter. Comma-separated: each term is matched on its
   // own and a row survives if any term is in its FSN, so pasting a column of

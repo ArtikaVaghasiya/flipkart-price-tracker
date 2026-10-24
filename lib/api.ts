@@ -160,10 +160,21 @@ export const api = {
 
     await Promise.all(prepared.uploads.map(async (upload, index) => {
       const source = index === 0 ? file : minimumFile;
-      const { error } = await client.storage.from(prepared.bucket).uploadToSignedUrl(upload.path, upload.token, source, {
-        contentType: source.type || 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-      });
-      if (error) throw new Error(error.message);
+      try {
+        const { error } = await client.storage.from(prepared.bucket).uploadToSignedUrl(upload.path, upload.token, source, {
+          contentType: source.type || 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        });
+        if (error) {
+          throw new Error(error.message);
+        }
+      } catch (error) {
+        const detail = error instanceof Error ? error.message : String(error);
+        throw new Error(
+          `Could not upload "${source.name}" to Supabase Storage: ${detail}. ` +
+            'Check that the browser URL and publishable/anon key belong to the same Supabase project; ' +
+            'if the browser console reports CORS, allow http://localhost:3000 in the Supabase API CORS settings.',
+        );
+      }
     }));
 
     return request<{ filename: string; report: ValidationReport }>('/api/upload', {

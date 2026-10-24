@@ -75,6 +75,7 @@ export interface JobResultDb {
   message: string | null;
   sellers_scanned: number | null;
   show_more_clicks: number | null;
+  seller_names: string[];
   source: 'network' | 'dom' | 'api' | null;
   duration_ms: number | null;
   attempts: number | null;

@@ -78,6 +78,8 @@ export interface JobOptions {
   useNetworkCapture: boolean;
   /** Local-only convenience: watch the browser work. Useless on a headless host. */
   headed: boolean;
+  /** Winning sellers to exclude from price recommendations for this batch. */
+  excludedSellerNames: string[];
 }
 
 export const DEFAULT_JOB_OPTIONS: JobOptions = {
@@ -98,6 +100,7 @@ export const DEFAULT_JOB_OPTIONS: JobOptions = {
   // Zero hits in 1010 recorded products; opt in only if Flipkart ships an API.
   useNetworkCapture: false,
   headed: false,
+  excludedSellerNames: [],
 };
 
 /**

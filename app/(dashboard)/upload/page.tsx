@@ -19,6 +19,7 @@ export default function UploadPage() {
   const [file, setFile] = useState<File | null>(null);
   const [minimumFile, setMinimumFile] = useState<File | null>(null);
   const [account, setAccount] = useState('');
+  const [excludedSellers, setExcludedSellers] = useState('');
   const [name, setName] = useState('');
   const [report, setReport] = useState<Report | null>(null);
   const validate = useMutation({
@@ -33,7 +34,11 @@ export default function UploadPage() {
       name,
       accountName: account.trim(),
       rows: report?.rows ?? [],
-      options: { ...DEFAULT_JOB_OPTIONS, concurrency: workers },
+      options: {
+        ...DEFAULT_JOB_OPTIONS,
+        concurrency: workers,
+        excludedSellerNames: excludedSellers.split(',').map((seller) => seller.trim()).filter(Boolean),
+      },
     }),
     onSuccess: ({ job }) => router.push(`/jobs/${job.id}`),
   });
@@ -41,6 +46,18 @@ export default function UploadPage() {
   return <div className="w-full space-y-6 p-4 xl:p-5">
     <header><h1 className="text-xl font-semibold">New batch</h1><p className="mt-1 text-sm text-muted-foreground">Add products for one Flipkart account.</p></header>
     <div className="space-y-2"><Label htmlFor="account">Flipkart account</Label><Input id="account" value={account} onChange={(event) => { setAccount(event.target.value); setReport(null); }} placeholder="e.g. Anuttar" /></div>
+    <div className="space-y-2">
+      <Label htmlFor="excluded-sellers">Except sellers</Label>
+      <Input
+        id="excluded-sellers"
+        value={excludedSellers}
+        onChange={(event) => setExcludedSellers(event.target.value)}
+        placeholder="e.g. Seller One, Seller Two"
+      />
+      <p className="text-xs text-muted-foreground">
+        Comma-separated winning seller names. Matching ignores case and punctuation; excluded sellers keep the current bank settlement.
+      </p>
+    </div>
     <UploadDropzone onFile={(next) => { setFile(next); setReport(null); if (!name) setName(next.name.replace(/\.(xlsx?|json)$/i, '')); }} disabled={!account.trim() || validate.isPending || create.isPending} filename={file?.name ?? null} title="Drop listing data (sheet 1), or click to browse" description="Needs: SKU Seller ID, FSN, Current Bank Settlement" />
     <UploadDropzone onFile={(next) => { setMinimumFile(next); setReport(null); }} disabled={!account.trim() || validate.isPending || create.isPending} filename={minimumFile?.name ?? null} title="Drop minimum bank settlement (sheet 2), or click to browse" description="Needs: SKU, Minimum Bank Settlement price" />
     <Button onClick={() => validate.mutate()} disabled={!file || !minimumFile || !account.trim() || validate.isPending}>{validate.isPending ? <Loader2 className="animate-spin" /> : <Play />} Validate table</Button>

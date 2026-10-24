@@ -1,6 +1,7 @@
 /** The only recommendation calculation used by the application. */
 
 import { computeSettlement } from '@/lib/settlement';
+import { sellerNamesMatch } from '@/scraper/parser';
 import type { JobRow } from '@/types/dashboard';
 
 export type RecommendationStatus =
@@ -14,6 +15,8 @@ export type RecommendationStatus =
 
 export interface Recommendation {
   key: string;
+  /** Comma-separated sellers, populated when building the recommendation export. */
+  sellerNames?: string;
   /**
    * The row's position in the uploaded file, 0-based — `JobRow.index`, carried
    * through unchanged.
@@ -91,11 +94,22 @@ function unevaluated(row: JobRow, status: RecommendationStatus, reason: string):
  * the scraper's own `difference` is stored the other way round and must not be
  * used here.
  */
-export function buildRecommendation(input: JobRow): Recommendation {
+export function buildRecommendation(input: JobRow, excludedSellerNames: string[] = []): Recommendation {
+  const excludedWinner =
+    input.result?.status === 'OK' &&
+    excludedSellerNames.some((name) => sellerNamesMatch(name, input.result?.buyboxSellerName));
+  if (excludedWinner) {
+    return unevaluated(
+      input,
+      'Need Review',
+      `Winning seller "${input.result?.buyboxSellerName}" is excluded; keep the current bank settlement unchanged.`,
+    );
+  }
+
   // Everything below — `unevaluated` included — reads the floored row, so the
   // lift happens exactly once and no later step can see the sub-minimum value.
   const row = withMinimumFloor(input);
-  const settlement = computeSettlement(row);
+  const settlement = computeSettlement(row, excludedSellerNames);
   const result = row.result;
 
   if (!result) {

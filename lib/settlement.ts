@@ -32,14 +32,14 @@ export interface Settlement {
   hasBuybox: boolean | null;
   currentBankSettlement: number | null;
   bankSettlementThreshold: number | null;
-  /** currentBankSettlement + difference. Null when either input is missing. */
+  /** Proposed settlement, or the unchanged current value for an excluded seller. */
   finalBankSettlement: number | null;
   category: SettlementCategory;
   /** Why a row landed in "Needs review". Null for the main/below lists. */
   reason: string | null;
 }
 
-export function computeSettlement(row: JobRow): Settlement {
+export function computeSettlement(row: JobRow, excludedSellerNames: string[] = []): Settlement {
   const currentPrice = row.result?.mainPrice ?? null;
   const sellerPrice = row.result?.sellerPrice ?? null;
   const currentBankSettlement = row.currentBankSettlement ?? null;
@@ -48,12 +48,17 @@ export function computeSettlement(row: JobRow): Settlement {
   const difference = currentPrice !== null && sellerPrice !== null ? currentPrice - sellerPrice : null;
   const differencePct =
     difference !== null && sellerPrice !== null && sellerPrice !== 0 ? (difference / sellerPrice) * 100 : null;
+  const buyboxSellerName = row.result?.buyboxSellerName ?? null;
+  const excludedSeller = excludedSellerNames.some((name) => sellerNamesMatch(name, buyboxSellerName));
   const finalBankSettlement =
-    currentBankSettlement !== null && difference !== null ? currentBankSettlement + difference : null;
+    excludedSeller
+      ? currentBankSettlement
+      : currentBankSettlement !== null && difference !== null
+        ? currentBankSettlement + difference
+        : null;
 
   // Compared through the scraper's own name matcher, so "Shoppping Dil Se" and
   // "ShopppingDilSe" are the same seller here as they are during a scrape.
-  const buyboxSellerName = row.result?.buyboxSellerName ?? null;
   const hasBuybox = buyboxSellerName ? sellerNamesMatch(buyboxSellerName, row.targetSeller) : null;
 
   const { category, reason } = categorize(row, {
@@ -63,6 +68,7 @@ export function computeSettlement(row: JobRow): Settlement {
     currentBankSettlement,
     bankSettlementThreshold,
     finalBankSettlement,
+    excludedSeller,
   });
 
   return {
@@ -88,6 +94,7 @@ function categorize(
     currentBankSettlement: number | null;
     bankSettlementThreshold: number | null;
     finalBankSettlement: number | null;
+    excludedSeller: boolean;
   },
 ): { category: SettlementCategory; reason: string | null } {
   if (!row.result) {
@@ -95,6 +102,9 @@ function categorize(
   }
   if (row.result.status !== 'OK') {
     return { category: 'review', reason: `Scrape failed (${row.result.status})` };
+  }
+  if (parts.excludedSeller) {
+    return { category: 'review', reason: 'Winning seller is excluded; current bank settlement is unchanged.' };
   }
   if (parts.currentPrice === null || parts.sellerPrice === null) {
     return { category: 'review', reason: 'Missing price data' };

@@ -198,7 +198,7 @@ export default function JobDetailPage() {
         </TabsContent>
 
         <TabsContent value="settlement">
-          <SettlementView jobId={jobId} />
+          <SettlementView jobId={jobId} excludedSellerNames={manifest.options.excludedSellerNames} />
         </TabsContent>
 
         <TabsContent value="failed">

@@ -1,0 +1,8 @@
+{
+    "chat.tools.terminal.autoApprove": {
+        "/^git status --short && if \\[ -d node_modules \\]; then printf 'node_modules exists\\\\n'; else printf 'node_modules missing\\\\n'; fi && node --version && npm --version$/": {
+            "approve": true,
+            "matchCommandLine": true
+        }
+    }
+}

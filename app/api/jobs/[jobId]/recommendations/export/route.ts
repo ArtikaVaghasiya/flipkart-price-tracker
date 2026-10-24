@@ -15,7 +15,7 @@ import {
   recommendationXlsxBuffer,
 } from '@/lib/services/exportService';
 import { ensureRecommendations } from '@/lib/services/recommendations';
-import { getJob } from '@/lib/store/jobStore';
+import { getJob, getSellerNames } from '@/lib/store/jobStore';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -36,9 +36,14 @@ export async function GET(request: Request, { params }: Context) {
 
   const file = await ensureRecommendations(jobId);
   if (!file) return NextResponse.json({ error: 'No recommendations for this job.' }, { status: 404 });
+  const sellerNamesByIndex = await getSellerNames(jobId);
+  const recommendations = file.recommendations.map((item) => ({
+    ...item,
+    sellerNames: (sellerNamesByIndex.get(item.index) ?? []).join(', '),
+  }));
 
   if (format === 'csv') {
-    return new Response(recommendationCsvStream(file.recommendations), {
+    return new Response(recommendationCsvStream(recommendations), {
       headers: {
         'Content-Type': 'text/csv; charset=utf-8',
         'Content-Disposition': `attachment; filename="${exportFilename(manifest, 'csv', 'price-change')}"`,
@@ -46,7 +51,7 @@ export async function GET(request: Request, { params }: Context) {
     });
   }
 
-  const buffer = await recommendationXlsxBuffer(manifest, file.recommendations, {
+  const buffer = await recommendationXlsxBuffer(manifest, recommendations, {
     accountName: file.accountName,
     generatedAt: file.generatedAt,
     summary: file.summary,
