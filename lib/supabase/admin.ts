@@ -21,7 +21,28 @@ function required(name: string, value: string | undefined): string {
         `Vercel's project environment and the repository's GitHub Actions secrets.`,
     );
   }
-  return value;
+  return value.trim();
+}
+
+function validateServerConfig(url: string, key: string): void {
+  const placeholderPatterns = [
+    'supabase.com/dashboard/sign-in',
+    'your-project-ref',
+    'replace-me',
+    'example', 
+  ];
+
+  if (placeholderPatterns.some((pattern) => url.toLowerCase().includes(pattern.toLowerCase()))) {
+    throw new Error(
+      'The SUPABASE_URL is still a placeholder. Set it to the real Supabase project URL from Project Settings > API.',
+    );
+  }
+
+  if (placeholderPatterns.some((pattern) => key.toLowerCase().includes(pattern.toLowerCase()))) {
+    throw new Error(
+      'The SUPABASE_SERVICE_ROLE_KEY is still a placeholder or invalid. Copy the real service-role key from Supabase Project Settings > API.',
+    );
+  }
 }
 
 export function supabaseAdmin(): SupabaseClient {
@@ -34,6 +55,8 @@ export function supabaseAdmin(): SupabaseClient {
   // same URL is already set for the browser client. The key has no such fallback.
   const url = required('SUPABASE_URL', process.env.SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL);
   const key = required('SUPABASE_SERVICE_ROLE_KEY', process.env.SUPABASE_SERVICE_ROLE_KEY);
+
+  validateServerConfig(url, key);
 
   cached = createClient(url, key, {
     auth: { persistSession: false, autoRefreshToken: false },

@@ -104,6 +104,17 @@ jobs:
               missing=1
             fi
           done
+
+          if printf '%s' "$SUPABASE_URL" | grep -Eiq 'supabase.com/dashboard/sign-in|your-project-ref|replace-me|example'; then
+            echo "::error title=Invalid Supabase URL::SUPABASE_URL is still a placeholder. Copy the real Project URL from Supabase Project Settings > API."
+            missing=1
+          fi
+
+          if printf '%s' "$SUPABASE_SERVICE_ROLE_KEY" | grep -Eiq 'replace-me|your-project-ref|example|supabase.com/dashboard/sign-in'; then
+            echo "::error title=Invalid service role key::SUPABASE_SERVICE_ROLE_KEY is still a placeholder. Copy the real service-role key from Supabase Project Settings > API."
+            missing=1
+          fi
+
           exit "$missing"
 
       - name: Run the worker

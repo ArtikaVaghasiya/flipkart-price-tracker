@@ -67,12 +67,40 @@ class MissingEnv extends Error {
   }
 }
 
+function hasPlaceholderSupabaseValue(value: string, kind: 'URL' | 'KEY'): boolean {
+  const normalized = value.trim().toLowerCase();
+  if (!normalized) return true;
+
+  const placeholderPatterns = [
+    'supabase.com/dashboard/sign-in',
+    'your-project-ref',
+    'replace-me',
+    'example',
+  ];
+
+  if (kind === 'URL') {
+    return placeholderPatterns.some((pattern) => normalized.includes(pattern)) || !normalized.startsWith('https://');
+  }
+
+  return placeholderPatterns.some((pattern) => normalized.includes(pattern)) || normalized.length < 60;
+}
+
 export function readEnv(argv: string[] = process.argv.slice(2)): WorkerEnv {
   const supabaseUrl = process.env.SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL;
   if (!supabaseUrl) throw new MissingEnv('SUPABASE_URL');
+  if (hasPlaceholderSupabaseValue(supabaseUrl, 'URL')) {
+    throw new Error(
+      'SUPABASE_URL still points to a placeholder or an invalid value. Set it to the real Supabase project URL from Project Settings > API.',
+    );
+  }
 
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!serviceRoleKey) throw new MissingEnv('SUPABASE_SERVICE_ROLE_KEY');
+  if (hasPlaceholderSupabaseValue(serviceRoleKey, 'KEY')) {
+    throw new Error(
+      'SUPABASE_SERVICE_ROLE_KEY is still a placeholder or invalid. Copy the real service-role key from Supabase Project Settings > API.',
+    );
+  }
 
   return {
     supabaseUrl,
