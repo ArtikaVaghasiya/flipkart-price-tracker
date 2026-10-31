@@ -10,6 +10,7 @@ import { NextResponse } from 'next/server';
 import { validateUpload } from '@/lib/validation/uploadSchema';
 import { supabaseAdmin } from '@/lib/supabase/admin';
 import { minimumSettlementBySku, spreadsheetToScrapeRows } from '@/lib/validation/spreadsheetUpload';
+import { parseJsonBody } from '@/lib/validation/uploadRequest';
 
 export const runtime = 'nodejs';
 // Parsing a large workbook can take longer than Vercel's short default.
@@ -19,12 +20,21 @@ const BUCKET = 'upload-staging';
 const STAGED_PATH = /^[0-9a-f-]{36}\/[a-zA-Z0-9._-]+$/;
 
 export async function POST(request: Request) {
-  let body: { filePath?: unknown; minimumFilePath?: unknown; targetSeller?: unknown };
-
+  let rawBody: string;
   try {
-    body = await request.json();
+    rawBody = await request.text();
+  } catch {
+    return NextResponse.json({ error: 'Request body could not be read.' }, { status: 400 });
+  }
+
+  let body: { filePath?: unknown; minimumFilePath?: unknown; targetSeller?: unknown };
+  try {
+    body = parseJsonBody<{ filePath?: unknown; minimumFilePath?: unknown; targetSeller?: unknown }>(rawBody, 'Upload request body');
   } catch (error) {
-    return NextResponse.json({ error: 'Request body must be JSON.' }, { status: 400 });
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : 'Upload request body must be valid JSON.' },
+      { status: 400 },
+    );
   }
 
   const targetSeller = typeof body.targetSeller === 'string' ? body.targetSeller.trim() : '';

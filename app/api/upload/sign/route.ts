@@ -9,35 +9,38 @@
 
 import { NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase/admin';
+import { normalizeUploadFiles, parseJsonBody } from '@/lib/validation/uploadRequest';
 
 export const runtime = 'nodejs';
 
 const BUCKET = 'upload-staging';
-const ALLOWED_EXTENSIONS = /\.(xlsx?|xls)$/i;
-
-type UploadFile = { name?: unknown; contentType?: unknown };
 
 export async function POST(request: Request) {
-  let body: { files?: UploadFile[] };
+  let rawBody: string;
   try {
-    body = await request.json();
+    rawBody = await request.text();
   } catch {
-    return NextResponse.json({ error: 'Request body must be JSON.' }, { status: 400 });
+    return NextResponse.json({ error: 'Request body could not be read.' }, { status: 400 });
   }
 
-  if (!Array.isArray(body.files) || body.files.length !== 2) {
-    return NextResponse.json({ error: 'Exactly two spreadsheet files are required.' }, { status: 400 });
+  let payload: { files?: unknown };
+  try {
+    payload = parseJsonBody<{ files?: unknown }>(rawBody, 'Request body');
+  } catch (error) {
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : 'Request body must be valid JSON.' },
+      { status: 400 },
+    );
   }
 
   try {
-    const uploads = await Promise.all(body.files.map(async (file) => {
-      const name = typeof file.name === 'string' ? file.name : '';
-      if (!name || !ALLOWED_EXTENSIONS.test(name)) {
-        throw new Error('Only XLS and XLSX files can be uploaded.');
-      }
+    const files = normalizeUploadFiles(payload.files);
+    if (files.length !== 2) {
+      return NextResponse.json({ error: 'Exactly two spreadsheet files are required.' }, { status: 400 });
+    }
 
-      // The generated prefix makes a token useful only for the object created
-      // for this request; filenames are reduced to a harmless display suffix.
+    const uploads = await Promise.all(files.map(async (file) => {
+      const name = file.name;
       const suffix = name.replace(/[^a-zA-Z0-9._-]/g, '_').slice(-120);
       const path = `${crypto.randomUUID()}/${suffix}`;
       const { data, error } = await supabaseAdmin().storage.from(BUCKET).createSignedUploadUrl(path);
